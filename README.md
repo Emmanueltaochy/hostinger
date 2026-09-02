@@ -81,6 +81,59 @@ Les noms d'outils sont ceux exposés par le serveur MCP ; dans Claude Code ils
 apparaissent préfixés par le serveur, par exemple
 `mcp__hostinger-hosting__hosting_listWebsitesV1`.
 
+## Modifier le contenu d'un site WordPress
+
+L'API Hostinger **ne modifie pas le contenu** des sites. Sur WordPress, textes et
+images vivent dans la base de données : aucun outil des serveurs ci-dessus ne
+sait éditer une page ou un article. Le contenu passe par l'**API REST de
+WordPress**, avec un accès propre à un seul site.
+
+`scripts/wp.py` s'appuie sur cette API (bibliothèque standard Python, aucune
+dépendance à installer).
+
+### Créer l'accès
+
+1. Dans le site : **Utilisateurs → Ajouter**, rôle **Éditeur** (pas
+   Administrateur : l'Éditeur modifie textes et images, sans pouvoir toucher aux
+   extensions ni supprimer le site).
+2. Se connecter avec ce compte, puis **Utilisateurs → Profil → Mots de passe
+   d'application**. Nommer le mot de passe, le générer, le copier — il ne
+   s'affiche qu'une fois. Les espaces qu'il contient font partie du mot de passe.
+3. Renseigner les variables d'environnement :
+
+   ```bash
+   export WP_SITE_URL='https://monsite.fr'
+   export WP_USER='mon-editeur'
+   export WP_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx'
+   ```
+
+Un mot de passe d'application ne vaut que pour ce site, se révoque seul depuis la
+même page, et n'ouvre que les droits du rôle choisi. Il ne donne accès ni à la
+facturation, ni aux domaines, ni aux autres sites.
+
+### Commandes
+
+| Commande | Effet |
+| --- | --- |
+| `check` | Vérifier les identifiants et afficher le rôle |
+| `detect-builder` | Repérer Elementor, Divi, WPBakery… avant toute écriture |
+| `list [--type pages] [--search TEXTE]` | Lister articles ou pages avec leur identifiant |
+| `get ID` | Afficher le contenu brut |
+| `update ID --title T --content-file F` | Modifier titre et/ou contenu |
+| `upload IMAGE --alt TEXTE` | Envoyer une image dans la médiathèque |
+| `set-image POST_ID MEDIA_ID` | Définir l'image mise en avant |
+
+### Limite importante : les constructeurs de pages
+
+Si le site est construit avec **Elementor, Divi, WPBakery, Avada, Bricks ou
+Beaver Builder**, le contenu visible n'est pas dans le champ `content` de l'API
+mais dans des métadonnées propres au constructeur. Écrire par l'API REST y
+détruirait la mise en page. Lance `detect-builder` avant toute modification : il
+renvoie le code 2 quand il en repère un.
+
+Les sites en éditeur de blocs (Gutenberg) ou éditeur classique ne sont pas
+concernés.
+
 ## Autres serveurs fournis par le paquet
 
 Non activés ici — ajoute une entrée avec le binaire correspondant si tu en as besoin :

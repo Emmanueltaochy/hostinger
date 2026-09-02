@@ -81,6 +81,57 @@ These are the tool names as exposed by the MCP server; inside Claude Code they
 appear prefixed with the server name, e.g.
 `mcp__hostinger-hosting__hosting_listWebsitesV1`.
 
+## Editing WordPress site content
+
+The Hostinger API **does not edit site content**. On WordPress, text and images
+live in the database: none of the tools from the servers above can edit a page
+or a post. Content goes through the **WordPress REST API**, with access scoped
+to a single site.
+
+`scripts/wp.py` wraps that API (Python standard library, nothing to install).
+
+### Creating the access
+
+1. On the site: **Users → Add New**, role **Editor** (not Administrator — an
+   Editor changes text and images without being able to touch plugins or delete
+   the site).
+2. Log in as that user, then **Users → Profile → Application Passwords**. Name
+   it, generate it, copy it — it is shown only once. The spaces it contains are
+   part of the password.
+3. Set the environment variables:
+
+   ```bash
+   export WP_SITE_URL='https://mysite.com'
+   export WP_USER='my-editor'
+   export WP_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx'
+   ```
+
+An application password is valid for that site only, is revoked on its own from
+the same page, and grants nothing beyond the chosen role. It gives no access to
+billing, domains, or any other site.
+
+### Commands
+
+| Command | Effect |
+| --- | --- |
+| `check` | Verify credentials and show the role |
+| `detect-builder` | Spot Elementor, Divi, WPBakery… before writing anything |
+| `list [--type pages] [--search TEXT]` | List posts or pages with their IDs |
+| `get ID` | Show the raw content |
+| `update ID --title T --content-file F` | Change title and/or content |
+| `upload IMAGE --alt TEXT` | Send an image to the media library |
+| `set-image POST_ID MEDIA_ID` | Set the featured image |
+
+### Important limit: page builders
+
+If the site is built with **Elementor, Divi, WPBakery, Avada, Bricks or Beaver
+Builder**, the visible content is not in the API's `content` field but in
+builder-specific metadata. Writing through the REST API would destroy the
+layout. Run `detect-builder` before any change: it exits with code 2 when it
+finds one.
+
+Sites using the block editor (Gutenberg) or the classic editor are unaffected.
+
 ## Other servers available in the package
 
 Not enabled here — add an entry with the matching binary if you need one:
