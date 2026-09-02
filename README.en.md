@@ -43,8 +43,8 @@ Requires Node.js 20 or newer (`engines` constraint of `hostinger-api-mcp`).
 
 ## Token handling
 
-The token grants full control of the account's hosting, domains, DNS, billing and
-VPS resources. Keep it out of version control:
+The token grants full control of the account's hosting, domains, DNS, billing,
+mail and VPS resources. Keep it out of version control:
 
 - Prefer the project-scope `.mcp.json`, which only references `${HOSTINGER_API_TOKEN}`.
 - If you use user scope, the token lives in `.claude.json` outside this repo.
@@ -60,15 +60,34 @@ VPS resources. Keep it out of version control:
 | `hostinger-dns` | `hostinger-dns-mcp` | DNS records, validation, snapshots and restores |
 | `hostinger-billing` | `hostinger-billing-mcp` | Catalog, subscriptions, payment methods, auto-renewal |
 | `hostinger-reach` | `hostinger-reach-mcp` | Contacts, segments, tags, campaigns, automations, forms |
+| `hostinger-mail` | `hostinger-mail-mcp` | Mail orders, mailboxes, aliases, forwarders, autoreplies, logs |
 | `hostinger-vps` | `hostinger-vps-mcp` | Virtual machines, firewalls, snapshots, backups, SSH keys, PTR records |
+
+## Entry point per panel section
+
+Every Hostinger panel section has one tool that lists its inventory. Start there,
+then reuse the identifier it returns (domain name, `username`, order ID, virtual
+machine ID) for the detail calls on the same server.
+
+| Panel section | Entry-point tool | MCP server |
+| --- | --- | --- |
+| Hosting | `hosting_listWebsitesV1` | `hostinger-hosting` |
+| Domains | `domains_getDomainListV1` | `hostinger-domains` |
+| Billing | `billing_getSubscriptionListV1` | `hostinger-billing` |
+| VPS | `VPS_getVirtualMachinesV1` | `hostinger-vps` |
+| Mail | `mail_listOrdersV1` | `hostinger-mail` |
+
+These are the tool names as exposed by the MCP server; inside Claude Code they
+appear prefixed with the server name, e.g.
+`mcp__hostinger-hosting__hosting_listWebsitesV1`.
 
 ## Other servers available in the package
 
 Not enabled here — add an entry with the matching binary if you need one:
 
-`hostinger-mail-mcp`, `hostinger-ecommerce-mcp`, `hostinger-wordpress-mcp`,
-`hostinger-horizons-mcp`, `hostinger-agency-hosting-mcp`, and
-`hostinger-api-mcp` (every tool in a single server).
+`hostinger-ecommerce-mcp`, `hostinger-wordpress-mcp`, `hostinger-horizons-mcp`,
+`hostinger-agency-hosting-mcp`, and `hostinger-api-mcp` (every tool in a single
+server).
 
 Loading `hostinger-api-mcp` exposes several hundred tools at once, which is why
 this config uses the per-product binaries instead.

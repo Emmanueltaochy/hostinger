@@ -44,7 +44,7 @@ Node.js 20 ou plus récent est requis (contrainte `engines` de `hostinger-api-mc
 ## Gestion du token
 
 Le token donne un contrôle complet sur l'hébergement, les domaines, le DNS, la
-facturation et les VPS du compte. Garde-le hors du gestionnaire de versions :
+facturation, le mail et les VPS du compte. Garde-le hors du gestionnaire de versions :
 
 - Privilégie le `.mcp.json` de portée projet, qui ne fait que référencer `${HOSTINGER_API_TOKEN}`.
 - Avec la portée utilisateur, le token vit dans `.claude.json`, en dehors de ce dépôt.
@@ -60,15 +60,34 @@ facturation et les VPS du compte. Garde-le hors du gestionnaire de versions :
 | `hostinger-dns` | `hostinger-dns-mcp` | Enregistrements DNS, validation, instantanés et restaurations |
 | `hostinger-billing` | `hostinger-billing-mcp` | Catalogue, abonnements, moyens de paiement, renouvellement automatique |
 | `hostinger-reach` | `hostinger-reach-mcp` | Contacts, segments, tags, campagnes, automatisations, formulaires |
+| `hostinger-mail` | `hostinger-mail-mcp` | Commandes mail, boîtes aux lettres, alias, redirections, réponses automatiques, journaux |
 | `hostinger-vps` | `hostinger-vps-mcp` | Machines virtuelles, pare-feu, instantanés, sauvegardes, clés SSH, enregistrements PTR |
+
+## Points d'entrée par section du panneau
+
+Chaque section du panneau Hostinger a un outil qui en liste l'inventaire. Commence
+par celui-ci, puis réutilise l'identifiant renvoyé (nom de domaine, `username`,
+ID de commande, ID de machine virtuelle) pour les appels de détail du même serveur.
+
+| Section du panneau | Outil d'entrée | Serveur MCP |
+| --- | --- | --- |
+| Hébergement | `hosting_listWebsitesV1` | `hostinger-hosting` |
+| Domaines | `domains_getDomainListV1` | `hostinger-domains` |
+| Facturation | `billing_getSubscriptionListV1` | `hostinger-billing` |
+| VPS | `VPS_getVirtualMachinesV1` | `hostinger-vps` |
+| Mail | `mail_listOrdersV1` | `hostinger-mail` |
+
+Les noms d'outils sont ceux exposés par le serveur MCP ; dans Claude Code ils
+apparaissent préfixés par le serveur, par exemple
+`mcp__hostinger-hosting__hosting_listWebsitesV1`.
 
 ## Autres serveurs fournis par le paquet
 
 Non activés ici — ajoute une entrée avec le binaire correspondant si tu en as besoin :
 
-`hostinger-mail-mcp`, `hostinger-ecommerce-mcp`, `hostinger-wordpress-mcp`,
-`hostinger-horizons-mcp`, `hostinger-agency-hosting-mcp`, ainsi que
-`hostinger-api-mcp` (tous les outils dans un seul serveur).
+`hostinger-ecommerce-mcp`, `hostinger-wordpress-mcp`, `hostinger-horizons-mcp`,
+`hostinger-agency-hosting-mcp`, ainsi que `hostinger-api-mcp` (tous les outils
+dans un seul serveur).
 
 Charger `hostinger-api-mcp` expose plusieurs centaines d'outils d'un coup : c'est
 la raison pour laquelle cette configuration utilise les binaires par produit.

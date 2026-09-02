@@ -25,6 +25,11 @@
       "args": ["--yes", "--package=hostinger-api-mcp@latest", "hostinger-reach-mcp"],
       "env": { "HOSTINGER_API_TOKEN": "${HOSTINGER_API_TOKEN}" }
     },
+    "hostinger-mail": {
+      "command": "npx",
+      "args": ["--yes", "--package=hostinger-api-mcp@latest", "hostinger-mail-mcp"],
+      "env": { "HOSTINGER_API_TOKEN": "${HOSTINGER_API_TOKEN}" }
+    },
     "hostinger-vps": {
       "command": "npx",
       "args": ["--yes", "--package=hostinger-api-mcp@latest", "hostinger-vps-mcp"],
