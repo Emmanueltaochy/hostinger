@@ -1,0 +1,11 @@
+# Local secrets — never commit a real Hostinger API token
+.env
+.env.local
+*.token
+
+# Claude Code local state
+.claude/settings.local.json
+
+# Node
+node_modules/
+npm-debug.log*
