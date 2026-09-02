@@ -9,3 +9,6 @@
 # Node
 node_modules/
 npm-debug.log*
+
+# Sauvegardes de contenu WordPress créées par scripts/wp.py
+backup-*.html

@@ -23,6 +23,7 @@ Usage :
 
 import argparse
 import base64
+import html
 import json
 import mimetypes
 import os
@@ -34,18 +35,30 @@ import urllib.request
 
 TIMEOUT = 30
 
-# Marqueurs laissés dans le HTML public par les constructeurs de pages. Quand
-# l'un d'eux est présent, le contenu réel n'est pas dans le champ « content »
-# de l'API mais dans des métadonnées propres au constructeur : l'écraser via
-# l'API REST casse la mise en page.
+# Marqueurs laissés dans le HTML public par les constructeurs de pages, et
+# l'endroit où chacun range le contenu. La distinction est décisive :
+#
+#   "content" : le texte est dans le champ « content » de l'API, entouré de
+#               balises propres au constructeur. Éditable, à condition de ne
+#               remplacer que le texte et de laisser les balises intactes —
+#               c'est ce que fait la commande `replace`.
+#   "meta"    : le texte est dans des métadonnées non exposées par l'API REST.
+#               Le champ « content » est vide ou trompeur, et y écrire détruit
+#               la page.
 BUILDERS = {
-    "Elementor": r"elementor-(?:page|widget|element)",
-    "Divi": r"\bet_pb_",
-    "WPBakery": r"\bvc_row\b",
-    "Avada/Fusion": r"\bfusion-(?:builder|row)\b",
-    "Bricks": r"\bbrxe-",
-    "Beaver Builder": r"\bfl-builder",
+    "Elementor": (r"elementor-(?:page|widget|element)", "meta"),
+    "Bricks": (r"\bbrxe-", "meta"),
+    "Beaver Builder": (r"\bfl-builder", "meta"),
+    "Divi": (r"\bet_pb_", "content"),
+    "WPBakery": (r"\bvc_row\b", "content"),
+    "Avada/Fusion": (r"\bfusion-(?:builder|row)\b", "content"),
 }
+
+# Balises de constructeur à retirer pour ne garder que le texte lisible.
+# Générique : couvre les balises des constructeurs comme celles des extensions
+# tierces (galeries, carrousels…) qu'un site accumule au fil du temps.
+SHORTCODE_RE = re.compile(r"\[/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^\]]*)?\]")
+WP_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 class WPError(Exception):
@@ -212,16 +225,180 @@ def cmd_detect_builder(args):
             html = resp.read().decode(errors="replace")
     except (urllib.error.URLError, urllib.error.HTTPError) as exc:
         raise WPError(f"Page d'accueil illisible ({exc}).") from None
-    found = [name for name, pattern in BUILDERS.items() if re.search(pattern, html)]
-    if found:
-        print("Constructeur de pages détecté : " + ", ".join(found))
+    found = {name: where for name, (pattern, where) in BUILDERS.items() if re.search(pattern, html)}
+    if not found:
+        print("Aucun constructeur de pages détecté : édition par l'API REST possible.")
+        return 0
+    blocking = [name for name, where in found.items() if where == "meta"]
+    editable = [name for name, where in found.items() if where == "content"]
+    if editable:
+        print("Constructeur détecté : " + ", ".join(editable))
         print(
-            "\nLe contenu visible n'est alors PAS dans le champ « content » de l'API.\n"
-            "Modifier une page via ce script écraserait la mise en page.\n"
-            "Sur ces pages, passe par l'éditeur du constructeur."
+            "\nIl range le texte dans le champ « content », entouré de ses propres\n"
+            "balises. L'édition est possible avec la commande `replace`, qui ne\n"
+            "remplace que le texte visé et laisse la mise en page intacte.\n"
+            "N'utilise pas `update` sur ces pages : elle réécrit tout le contenu."
+        )
+    if blocking:
+        print(("\n" if editable else "") + "Constructeur bloquant : " + ", ".join(blocking))
+        print(
+            "\nCelui-ci range le texte hors du champ « content ». Y écrire\n"
+            "détruirait la page : passe par son propre éditeur."
         )
         return 2
-    print("Aucun constructeur de pages détecté : édition par l'API REST possible.")
+    return 0
+
+
+def visible_text(raw):
+    """Texte lisible d'un contenu, balises de constructeur et HTML retirés."""
+    stripped = SHORTCODE_RE.sub("\n", WP_COMMENT_RE.sub(" ", raw))
+    segments = []
+    for chunk in stripped.split("\n"):
+        text = strip_html(chunk)
+        if text and len(text) > 1:
+            segments.append(text)
+    return segments
+
+
+def plain_map(raw):
+    """Texte lisible + correspondance de chaque caractère vers sa position brute.
+
+    Divi coupe souvent une phrase par des balises (« Notre <span>Expertise</span> ») :
+    la chaîne vue à l'écran n'existe alors pas telle quelle dans le contenu. Cette
+    carte permet de retrouver l'extrait brut exact correspondant à un texte lu.
+    """
+    plain, offsets, index, length = [], [], 0, len(raw)
+    while index < length:
+        char = raw[index]
+        if raw.startswith("<!--", index):
+            end = raw.find("-->", index)
+            index = length if end == -1 else end + 3
+            continue
+        if char in "<[":
+            closing = ">" if char == "<" else "]"
+            end = raw.find(closing, index)
+            if end != -1:
+                index = end + 1
+                continue
+        if char == "&":
+            match = re.match(r"&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);", raw[index:])
+            if match:
+                plain.append(html.unescape(match.group(0)))
+                offsets.append(index)
+                index += len(match.group(0))
+                continue
+        if char.isspace():
+            if plain and plain[-1] == " ":
+                index += 1
+                continue
+            plain.append(" ")
+            offsets.append(index)
+            index += 1
+            continue
+        plain.append(char)
+        offsets.append(index)
+        index += 1
+    offsets.append(length)
+    return "".join(plain), offsets
+
+
+def locate(raw, needle):
+    """Positions brutes (début, fin) de chaque occurrence d'un texte lisible."""
+    plain, offsets = plain_map(raw)
+    target = re.sub(r"\s+", " ", html.unescape(needle)).strip()
+    if not target:
+        return []
+    spans = []
+    start = plain.lower().find(target.lower())
+    while start != -1:
+        spans.append((offsets[start], offsets[start + len(target) - 1] + 1))
+        start = plain.lower().find(target.lower(), start + 1)
+    return spans
+
+
+def cmd_find(args):
+    item = request("GET", f"/{args.type}/{args.id}?context=edit")
+    raw = item.get("content", {}).get("raw", "")
+    spans = locate(raw, args.text)
+    if not spans:
+        print(f"Texte introuvable : {args.text!r}")
+        print("Liste les textes de la page avec la commande `text`.")
+        return 1
+    print(f"{len(spans)} occurrence(s) de {args.text!r} :\n")
+    for number, (start, end) in enumerate(spans, 1):
+        snippet = raw[start:end]
+        clean = not re.search(r"[<\[]", snippet)
+        print(f"{number}. position {start}")
+        print(f"   extrait brut : {snippet!r}")
+        if clean:
+            print("   → texte d'un seul tenant : `replace --old` fonctionne tel quel.")
+        else:
+            print("   → coupé par des balises. Vise une portion sans balise,")
+            print("     par exemple le mot seul, pour préserver la mise en forme.")
+        print()
+    return 0
+
+
+def cmd_text(args):
+    item = request("GET", f"/{args.type}/{args.id}?context=edit")
+    raw = item.get("content", {}).get("raw", "")
+    segments = visible_text(raw)
+    title = strip_html(item.get("title", {}).get("raw") or item.get("title", {}).get("rendered", ""))
+    print(f"# {title}   (id {args.id}, {args.type})")
+    print(f"{item.get('link')}\n")
+    if not segments:
+        print("Aucun texte lisible dans le champ « content ».")
+        print("Le contenu vient probablement d'un modèle ou de métadonnées.")
+        return 2
+    for index, segment in enumerate(segments, 1):
+        print(f"{index:>3}. {segment}")
+    print(f"\n{len(segments)} segments. Pour en modifier un :")
+    print(f'  python3 scripts/wp.py replace {args.id} --type {args.type} \\')
+    print('       --old "texte exact" --new "nouveau texte"')
+    return 0
+
+
+def cmd_replace(args):
+    item = request("GET", f"/{args.type}/{args.id}?context=edit")
+    raw = item.get("content", {}).get("raw", "")
+    count = raw.count(args.old)
+    if count == 0:
+        print(f"Texte absent tel quel du contenu : {args.old!r}")
+        spans = locate(raw, args.old)
+        if spans:
+            print(
+                f"\nIl est pourtant visible sur la page ({len(spans)} fois), mais coupé "
+                "par des balises HTML.\nExtrait brut réel :"
+            )
+            start, end = spans[0]
+            print(f"  {raw[start:end]!r}")
+            print("\nVise une portion sans balise pour préserver la mise en forme.")
+        else:
+            print("Liste les textes de la page avec la commande `text`.")
+            print("Attention aux apostrophes typographiques (’) et aux entités HTML.")
+        return 1
+    if count > 1 and not args.all:
+        print(f"{count} occurrences trouvées de {args.old!r}.")
+        print("Précise un extrait plus long, ou ajoute --all pour toutes les remplacer.")
+        return 1
+
+    backup_dir = os.environ.get("WP_BACKUP_DIR", ".")
+    os.makedirs(backup_dir, exist_ok=True)
+    backup = os.path.join(backup_dir, f"backup-{args.type}-{args.id}.html")
+    with open(backup, "w", encoding="utf-8") as handle:
+        handle.write(raw)
+
+    updated = raw.replace(args.old, args.new)
+    print(f"Sauvegarde du contenu original : {backup}")
+    print(f"Occurrences remplacées : {count}")
+    print(f"  avant : {args.old}")
+    print(f"  après : {args.new}")
+    if not args.apply:
+        print("\nSimulation — rien n'a été écrit. Ajoute --apply pour appliquer.")
+        return 0
+    result = request("POST", f"/{args.type}/{args.id}", data={"content": updated})
+    print(f"\nAppliqué : {result.get('link')}")
+    print(f"Restauration si besoin : --content-file {backup} avec la commande update")
     return 0
 
 
@@ -259,6 +436,26 @@ def main():
     p.add_argument("media_id", type=int)
     p.add_argument("--type", choices=("posts", "pages"), default="posts")
     p.set_defaults(func=cmd_set_image)
+
+    p = sub.add_parser("text", help="lister le texte lisible d'une page")
+    p.add_argument("id", type=int)
+    p.add_argument("--type", choices=("posts", "pages"), default="pages")
+    p.set_defaults(func=cmd_text)
+
+    p = sub.add_parser("find", help="localiser un texte et montrer l'extrait brut exact")
+    p.add_argument("id", type=int)
+    p.add_argument("text")
+    p.add_argument("--type", choices=("posts", "pages"), default="pages")
+    p.set_defaults(func=cmd_find)
+
+    p = sub.add_parser("replace", help="remplacer un texte précis sans toucher la mise en page")
+    p.add_argument("id", type=int)
+    p.add_argument("--type", choices=("posts", "pages"), default="pages")
+    p.add_argument("--old", required=True, help="texte exact à remplacer")
+    p.add_argument("--new", required=True, help="texte de remplacement")
+    p.add_argument("--all", action="store_true", help="remplacer toutes les occurrences")
+    p.add_argument("--apply", action="store_true", help="écrire (sans cette option : simulation)")
+    p.set_defaults(func=cmd_replace)
 
     sub.add_parser("detect-builder", help="repérer Elementor, Divi, etc.").set_defaults(func=cmd_detect_builder)
 

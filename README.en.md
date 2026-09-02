@@ -116,21 +116,50 @@ billing, domains, or any other site.
 | --- | --- |
 | `check` | Verify credentials and show the role |
 | `detect-builder` | Spot Elementor, Divi, WPBakery… before writing anything |
+| `text ID` | List the readable text of a page |
+| `find ID "TEXT"` | Locate a text and show the exact raw snippet |
+| `replace ID --old A --new B [--apply]` | Replace a text without touching the layout |
 | `list [--type pages] [--search TEXT]` | List posts or pages with their IDs |
 | `get ID` | Show the raw content |
 | `update ID --title T --content-file F` | Change title and/or content |
 | `upload IMAGE --alt TEXT` | Send an image to the media library |
 | `set-image POST_ID MEDIA_ID` | Set the featured image |
 
-### Important limit: page builders
+### Page builders: two very different cases
 
-If the site is built with **Elementor, Divi, WPBakery, Avada, Bricks or Beaver
-Builder**, the visible content is not in the API's `content` field but in
-builder-specific metadata. Writing through the REST API would destroy the
-layout. Run `detect-builder` before any change: it exits with code 2 when it
-finds one.
+They are not equivalent, and `detect-builder` tells them apart.
 
-Sites using the block editor (Gutenberg) or the classic editor are unaffected.
+**Blocking** — Elementor, Bricks and Beaver Builder keep text in metadata the
+REST API does not expose. The `content` field is empty or misleading, and
+writing to it destroys the page. `detect-builder` exits with code 2.
+
+**Editable with care** — Divi, WPBakery and Avada/Fusion keep text in the
+`content` field, wrapped in their own tags. Editing works through `replace`,
+which only touches the targeted text.
+
+On those sites never use `update`: it rewrites the whole content and would take
+the layout with it. `replace` saves the original content to
+`backup-<type>-<id>.html` before writing, and runs as a simulation by default —
+`--apply` is required to actually write.
+
+### Finding the exact text
+
+A builder often splits a sentence with tags: "Notre Expertise" on screen may be
+`Notre <span style="…">Expertise</span>` in the markup, so a literal replacement
+fails.
+
+`find` bridges the two: it locates on-screen text and prints the real raw
+snippet, flagging whether it is contiguous.
+
+```bash
+python3 scripts/wp.py find 99641 "Notre Expertise"
+```
+
+When the text is split, target a tag-free portion — a single word rather than
+the whole sentence — to preserve the formatting.
+
+Sites using the block editor (Gutenberg) or the classic editor need none of
+these precautions.
 
 ## Other servers available in the package
 

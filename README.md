@@ -117,22 +117,50 @@ facturation, ni aux domaines, ni aux autres sites.
 | --- | --- |
 | `check` | Vérifier les identifiants et afficher le rôle |
 | `detect-builder` | Repérer Elementor, Divi, WPBakery… avant toute écriture |
+| `text ID` | Lister le texte lisible d'une page |
+| `find ID "TEXTE"` | Localiser un texte et montrer l'extrait brut exact |
+| `replace ID --old A --new B [--apply]` | Remplacer un texte sans toucher la mise en page |
 | `list [--type pages] [--search TEXTE]` | Lister articles ou pages avec leur identifiant |
 | `get ID` | Afficher le contenu brut |
 | `update ID --title T --content-file F` | Modifier titre et/ou contenu |
 | `upload IMAGE --alt TEXTE` | Envoyer une image dans la médiathèque |
 | `set-image POST_ID MEDIA_ID` | Définir l'image mise en avant |
 
-### Limite importante : les constructeurs de pages
+### Constructeurs de pages : deux cas très différents
 
-Si le site est construit avec **Elementor, Divi, WPBakery, Avada, Bricks ou
-Beaver Builder**, le contenu visible n'est pas dans le champ `content` de l'API
-mais dans des métadonnées propres au constructeur. Écrire par l'API REST y
-détruirait la mise en page. Lance `detect-builder` avant toute modification : il
-renvoie le code 2 quand il en repère un.
+Tous ne se valent pas, et `detect-builder` fait la distinction.
+
+**Bloquants** — Elementor, Bricks, Beaver Builder rangent le texte dans des
+métadonnées que l'API REST n'expose pas. Le champ `content` est vide ou
+trompeur, et y écrire détruit la page. `detect-builder` renvoie le code 2.
+
+**Éditables avec précaution** — Divi, WPBakery, Avada/Fusion gardent le texte
+dans le champ `content`, entouré de leurs propres balises. L'édition est
+possible via `replace`, qui ne touche qu'au texte visé.
+
+Sur ces sites, n'utilise jamais `update` : elle réécrit tout le contenu et
+emporterait la mise en page. `replace` sauvegarde le contenu original dans
+`backup-<type>-<id>.html` avant d'écrire, et simule par défaut — il faut
+`--apply` pour appliquer réellement.
+
+### Retrouver le texte exact
+
+Un constructeur coupe fréquemment une phrase par des balises : « Notre
+Expertise » à l'écran peut être `Notre <span style="…">Expertise</span>` dans le
+code. Le remplacement littéral échoue alors.
+
+`find` fait le pont : il localise un texte lu à l'écran et affiche l'extrait
+brut réel, en signalant s'il est d'un seul tenant.
+
+```bash
+python3 scripts/wp.py find 99641 "Notre Expertise"
+```
+
+Quand le texte est coupé, vise une portion sans balise — un mot seul plutôt que
+la phrase entière — pour préserver la mise en forme.
 
 Les sites en éditeur de blocs (Gutenberg) ou éditeur classique ne sont pas
-concernés.
+concernés par ces précautions.
 
 ## Autres serveurs fournis par le paquet
 
